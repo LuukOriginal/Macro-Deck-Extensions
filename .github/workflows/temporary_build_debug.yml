@@ -1,0 +1,56 @@
+name: Build and Validate Extension
+
+on:
+  workflow_dispatch:
+    inputs:
+      github_http_url:
+        description: 'GitHub Repo HTTP URL'
+        required: true
+        type: string
+      commit_ref:
+        description: 'Commit Ref (tag/branch/commit)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build_extension:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Get manifest details
+        run: |
+          rm -rf ../temp
+          mkdir ../temp
+          cd ../temp
+          git clone "${{ inputs.github_http_url }}" .
+          git checkout "${{ inputs.commit_ref }}"
+          ext_type=$(git cat-file -p HEAD:src/LuukOriginal.SCSPlugin/ExtensionManifest.json | jq -r '[.type][0]')
+          package_id=$(git cat-file -p HEAD:src/LuukOriginal.SCSPlugin/ExtensionManifest.json | jq -r '[.packageId][0]')
+          if [ $ext_type != "Plugin" ]; then ext_type='IconPack'; fi
+          echo "ext_type=$ext_type" >> $GITHUB_ENV
+          echo "package_id=$package_id" >> $GITHUB_ENV
+          cd ${{ github.workspace }}
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore dependencies
+        run: dotnet restore src/LuukOriginal.SCSPlugin/LuukOriginal.SCSPlugin.csproj
+
+      - name: Build solution
+        run: dotnet build SCSPlugin.sln --configuration Release
+
+      - name: Publish project
+        run: dotnet publish src/LuukOriginal.SCSPlugin/LuukOriginal.SCSPlugin.csproj --configuration Release --output ./publish
+
+      - name: List contents of publish folder
+        run: ls -la ./publish
